@@ -6,7 +6,7 @@ from models import SASRecModel
 from trainers import ELCRecTrainer
 from datasets import RecWithContrastiveLearningDataset
 from utils import get_user_seqs, check_path, set_seed
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 
 
 def main():
