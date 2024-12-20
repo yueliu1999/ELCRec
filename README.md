@@ -100,3 +100,13 @@ ELCRec-Yelp-1
 
 # Citation
 
+```
+@inproceedings{liuyue_ELCRec,
+  title={End-to-end Learnable Clustering for Intent Learning in Recommendation},
+  author={Liu, Yue and Zhu, Shihao and Xia, Jun and Ma, Yingwei and Ma, Jian and Zhong, Wenliang and Liu, Xinwang and Yu, Shengju and Zhang, Kejun},
+  booktitle={Proc. of NeurIPS},
+  year={2024}
+}
+```
+
+<p align="right">(<a href="#top">back to top</a>)</p>
