@@ -10,7 +10,7 @@
 Intent learning, which aims to learn users' intents for user understanding and item recommendation, has become a hot research spot in recent years. However, existing methods suffer from complex and cumbersome alternating optimization, limiting performance and scalability. To this end, we propose a novel intent learning method termed <u>ELCRec</u>, by unifying behavior representation learning into an <u>E</u>nd-to-end <u>L</u>earnable <u>C</u>lustering framework, for effective and efficient <u>Rec</u>ommendation. Concretely, we encode user behavior sequences and initialize the cluster centers (latent intents) as learnable neurons. Then, we design a novel learnable clustering module to separate different cluster centers, thus decoupling users' complex intents. Meanwhile, it guides the network to learn intents from behaviors by forcing behavior embeddings close to cluster centers. This allows simultaneous optimization of recommendation and clustering via mini-batch data. Moreover, we propose intent-assisted contrastive learning by using cluster centers as self-supervision signals, further enhancing mutual promotion Experimental results demonstrate the superiority of ELCRec from six perspectives. Compared to the runner-up, ELCRec improves NDCG@5 by 8.9% and reduces computational costs by 22.5% on the Beauty dataset. Furthermore, due to the scalability and universal applicability, we deploy this method on the industrial recommendation system with 130 million page views and achieve promising results.
 </p>
 
-<img src="./assets/intent_learning.png" alt="radar_plot" style="zoom:61%;" />
+<img src="./assets/intent_learning.png" alt="radar_plot" style="zoom:12%;" />
 <p align="center">
 Figure 1. Intent learning in recommendation.
 </p>
