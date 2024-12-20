@@ -1,3 +1,11 @@
+<div align="center">
+<h2><a href="https://arxiv.org/pdf/2410.02832">End-to-end Learnable Clustering for Intent Learning in Recommendation</a></h2>
+
+[Yue Liu](https://yueliu1999.github.io/), Shihao Zhu,  [Jun Xia](https://junxia97.github.io/), [Yingwei Ma](https://yingweima2022.github.io/), Jian Ma, [Xinwang Liu](https://xinwangliu.github.io/), Shengju Yu, Kejun Zhang, Wenliang Zhong
+
+
+</div>
+
 # ELCRec
 
 NeurIPS 2024
