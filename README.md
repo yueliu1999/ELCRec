@@ -12,6 +12,7 @@
 
 ### Quick Start
 
+For evaluation:
 ```
 cd ./src
 bash ./scripts/run_sports.sh
