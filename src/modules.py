@@ -16,165 +16,6 @@ def swish(x):
 ACT2FN = {"gelu": gelu, "relu": F.relu, "swish": swish}
 
 
-
-class PCLoss(nn.Module):
-    def __init__(self, temperature, device, contrast_mode="all"):
-        super(PCLoss, self).__init__()
-        self.contrast_mode = contrast_mode
-        self.criterion = NCELoss(temperature, device)
-
-    def forward(self, batch_sample_one, batch_sample_two, intents, intent_ids):
-        mean_pcl_loss = 0
-        if intent_ids is not None:
-            for intent, intent_id in zip(intents, intent_ids):
-                pos_one_compare_loss = self.criterion(batch_sample_one, intent, intent_id)
-                pos_two_compare_loss = self.criterion(batch_sample_two, intent, intent_id)
-                mean_pcl_loss += pos_one_compare_loss
-                mean_pcl_loss += pos_two_compare_loss
-
-            mean_pcl_loss /= 2 * len(intents)
-        else:
-            for intent in intents:
-                pos_one_compare_loss = self.criterion(batch_sample_one, intent, intent_ids=None)
-                pos_two_compare_loss = self.criterion(batch_sample_two, intent, intent_ids=None)
-                mean_pcl_loss += pos_one_compare_loss
-
-                mean_pcl_loss += pos_two_compare_loss
-
-            mean_pcl_loss /= 2 * len(intents)
-        return mean_pcl_loss
-
-
-class SupConLoss(nn.Module):
-
-    def __init__(self, temperature, device, contrast_mode="all"):
-        super(SupConLoss, self).__init__()
-        self.device = device
-        self.temperature = temperature
-        self.contrast_mode = contrast_mode
-        self.total_calls = 0
-        self.call_with_repeat_seq = 0
-
-    def forward(self, features, intents=None, mask=None):
-        if intents is not None:
-            unique_intents = torch.unique(intents)
-            if unique_intents.shape[0] != intents.shape[0]:
-                self.call_with_repeat_seq += 1
-            self.total_calls += 1
-        if len(features.shape) < 3:
-            raise ValueError("`features` needs to be [bsz, n_views, ...]," "at least 3 dimensions are required")
-        if len(features.shape) > 3:
-            features = features.view(features.shape[0], features.shape[1], -1)
-
-        features = F.normalize(features, dim=2)
-
-        batch_size = features.shape[0]
-        if intents is not None and mask is not None:
-            raise ValueError("Cannot define both `labels` and `mask`")
-        elif intents is None and mask is None:
-            mask = torch.eye(batch_size, dtype=torch.float32).to(self.device)
-        elif intents is not None:
-            intents = intents.contiguous().view(-1, 1)
-            if intents.shape[0] != batch_size:
-                raise ValueError("Num of labels does not match num of features")
-            mask = torch.eq(intents, intents.T).float().to(self.device)
-        else:
-            mask = mask.float().to(self.device)
-
-        contrast_count = features.shape[1]
-        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
-        if self.contrast_mode == "one":
-            anchor_feature = features[:, 0]
-            anchor_count = 1
-        elif self.contrast_mode == "all":
-            anchor_feature = contrast_feature
-            anchor_count = contrast_count
-        else:
-            raise ValueError("Unknown mode: {}".format(self.contrast_mode))
-
-        anchor_dot_contrast = torch.div(torch.matmul(anchor_feature, contrast_feature.T), self.temperature)
-        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-        logits = anchor_dot_contrast - logits_max.detach()
-
-        mask = mask.repeat(anchor_count, contrast_count)
-        logits_mask = torch.scatter(
-            torch.ones_like(mask), 1, torch.arange(batch_size * anchor_count).view(-1, 1).to(self.device), 0
-        )
-        mask = mask * logits_mask
-
-        exp_logits = torch.exp(logits) * logits_mask
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-
-        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
-
-        loss = -mean_log_prob_pos
-        loss = loss.view(anchor_count, batch_size).mean()
-
-        return loss
-    
-
-class NCELoss(nn.Module):
-
-    def __init__(self, temperature, device):
-        super(NCELoss, self).__init__()
-        self.device = device
-        self.criterion = nn.CrossEntropyLoss().to(self.device)
-        self.temperature = temperature
-        self.cossim = nn.CosineSimilarity(dim=-1).to(self.device)
-
-    def forward(self, batch_sample_one, batch_sample_two, intent_ids=None):
-        sim11 = torch.matmul(batch_sample_one, batch_sample_one.T) / self.temperature
-        sim22 = torch.matmul(batch_sample_two, batch_sample_two.T) / self.temperature
-        sim12 = torch.matmul(batch_sample_one, batch_sample_two.T) / self.temperature
-        d = sim12.shape[-1]
-        if intent_ids is not None:
-            intent_ids = intent_ids.contiguous().view(-1, 1)
-            mask_11_22 = torch.eq(intent_ids, intent_ids.T).long().to(self.device)
-            sim11[mask_11_22 == 1] = float("-inf")
-            sim22[mask_11_22 == 1] = float("-inf")
-            eye_metrix = torch.eye(d, dtype=torch.long).to(self.device)
-            mask_11_22[eye_metrix == 1] = 0
-            sim12[mask_11_22 == 1] = float("-inf")
-        else:
-            mask = torch.eye(d, dtype=torch.long).to(self.device)
-            sim11[mask == 1] = float("-inf")
-            sim22[mask == 1] = float("-inf")
-
-        raw_scores1 = torch.cat([sim12, sim11], dim=-1)
-        raw_scores2 = torch.cat([sim22, sim12.transpose(-1, -2)], dim=-1)
-        logits = torch.cat([raw_scores1, raw_scores2], dim=-2)
-        labels = torch.arange(2 * d, dtype=torch.long, device=logits.device)
-        nce_loss = self.criterion(logits, labels)
-        return nce_loss
-
-
-
-class NTXent(nn.Module):
-    LARGE_NUMBER = 1e9
-    def __init__(self, tau=1.0, gpu=None, multiplier=2, distributed=False):
-        super().__init__()
-        self.tau = tau
-        self.multiplier = multiplier
-        self.distributed = distributed
-        self.norm = 1.0
-
-    def forward(self, batch_sample_one, batch_sample_two):
-        z = torch.cat([batch_sample_one, batch_sample_two], dim=0)
-        n = z.shape[0]
-        assert n % self.multiplier == 0
-        z = F.normalize(z, p=2, dim=1) / np.sqrt(self.tau)
-        logits = z @ z.t()
-        logits[np.arange(n), np.arange(n)] = -self.LARGE_NUMBER
-        logprob = F.log_softmax(logits, dim=1)
-
-        m = self.multiplier
-        labels = (np.repeat(np.arange(n), m) + np.tile(np.arange(m) * n // m, n)) % n
-        labels = labels.reshape(n, m)[:, 1:].reshape(-1)
-
-        loss = -logprob[np.repeat(np.arange(n), m - 1), labels].sum() / n / (m - 1) / self.norm
-        return loss
-
-
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
         super(LayerNorm, self).__init__()
@@ -319,3 +160,70 @@ class Encoder(nn.Module):
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
         return all_encoder_layers
+
+class NCELoss(nn.Module):
+
+    def __init__(self, temperature, device):
+        super(NCELoss, self).__init__()
+        self.device = device
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
+        self.temperature = temperature
+        self.cossim = nn.CosineSimilarity(dim=-1).to(self.device)
+
+    def forward(self, batch_sample_one, batch_sample_two, intent_ids=None):
+        sim11 = torch.matmul(batch_sample_one, batch_sample_one.T) / self.temperature
+        sim22 = torch.matmul(batch_sample_two, batch_sample_two.T) / self.temperature
+        sim12 = torch.matmul(batch_sample_one, batch_sample_two.T) / self.temperature
+        d = sim12.shape[-1]
+        if intent_ids is not None:
+            intent_ids = intent_ids.contiguous().view(-1, 1)
+            mask_11_22 = torch.eq(intent_ids, intent_ids.T).long().to(self.device)
+            sim11[mask_11_22 == 1] = float("-inf")
+            sim22[mask_11_22 == 1] = float("-inf")
+            eye_metrix = torch.eye(d, dtype=torch.long).to(self.device)
+            mask_11_22[eye_metrix == 1] = 0
+            sim12[mask_11_22 == 1] = float("-inf")
+        else:
+            mask = torch.eye(d, dtype=torch.long).to(self.device)
+            sim11[mask == 1] = float("-inf")
+            sim22[mask == 1] = float("-inf")
+
+        raw_scores1 = torch.cat([sim12, sim11], dim=-1)
+        raw_scores2 = torch.cat([sim22, sim12.transpose(-1, -2)], dim=-1)
+        logits = torch.cat([raw_scores1, raw_scores2], dim=-2)
+        labels = torch.arange(2 * d, dtype=torch.long, device=logits.device)
+        nce_loss = self.criterion(logits, labels)
+        return nce_loss
+
+
+class PCLoss(nn.Module):
+
+    def __init__(self, temperature, device, contrast_mode="all"):
+        super(PCLoss, self).__init__()
+        self.contrast_mode = contrast_mode
+        self.criterion = NCELoss(temperature, device)
+
+    def forward(self, batch_sample_one, batch_sample_two, intents, intent_ids):
+        """
+        features:
+        intents: num_clusters x batch_size x hidden_dims
+        """
+        mean_pcl_loss = 0
+        if intent_ids is not None:
+            for intent, intent_id in zip(intents, intent_ids):
+                pos_one_compare_loss = self.criterion(batch_sample_one, intent, intent_id)
+                pos_two_compare_loss = self.criterion(batch_sample_two, intent, intent_id)
+                mean_pcl_loss += pos_one_compare_loss
+                mean_pcl_loss += pos_two_compare_loss
+
+            mean_pcl_loss /= 2 * len(intents)
+        else:
+            for intent in intents:
+                pos_one_compare_loss = self.criterion(batch_sample_one, intent, intent_ids=None)
+                pos_two_compare_loss = self.criterion(batch_sample_two, intent, intent_ids=None)
+                mean_pcl_loss += pos_one_compare_loss
+
+                mean_pcl_loss += pos_two_compare_loss
+
+            mean_pcl_loss /= 2 * len(intents)
+        return mean_pcl_loss

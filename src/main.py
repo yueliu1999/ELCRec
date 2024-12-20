@@ -1,12 +1,14 @@
 import os
 import torch
-import wandb
 import argparse
+import numpy as np
+from tqdm import tqdm
 from models import SASRecModel
 from trainers import ELCRecTrainer
-from datasets import RecWithContrastiveLearningDataset
 from utils import get_user_seqs, check_path, set_seed
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
+from datasets import RecWithContrastiveLearningDataset
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from utils import EarlyStopping, get_user_seqs, get_item2attribute_json, check_path, set_seed
 
 
 def main():
@@ -50,7 +52,6 @@ def main():
     parser.add_argument(
         "--n_views", default=2, type=int, metavar="N", help="Number of augmented data for each sequence - not studied."
     )
-    
     parser.add_argument(
         "--contrast_type",
         default="Hybrid",
@@ -103,15 +104,15 @@ def main():
     parser.add_argument("--cf_weight", type=float, default=0.1, help="weight of contrastive learning task")
     parser.add_argument("--rec_weight", type=float, default=1.0, help="weight of contrastive learning task")
     parser.add_argument("--intent_cf_weight", type=float, default=0.3, help="weight of contrastive learning task")
-    parser.add_argument("--trade_off", type=float, default=1, help="trade off")
-
-    parser.add_argument("--wandb", action="store_true", default=True)
 
     # learning related
     parser.add_argument("--weight_decay", type=float, default=0.0, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam second beta value")
 
+    parser.add_argument("--wandb", action="store_true", default=False)
+    # parser.add_argument("--wandb", action="store_true", default=True)
+    
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -128,13 +129,12 @@ def main():
         args.trade_off = 0.1
     elif args.data_name in ["Beauty"]:
         args.trade_off = 10
-
+        
     if args.data_name in ["Beauty"]:
         args.prototype = "shift"
     else:
         args.prototype = "concat"
-
-
+        
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     args.cuda_condition = torch.cuda.is_available() and not args.no_cuda
     print("Using Cuda:", torch.cuda.is_available())
@@ -156,7 +156,6 @@ def main():
     checkpoint = args_str + ".pt"
     args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
 
-    # training data for node classification
     cluster_dataset = RecWithContrastiveLearningDataset(
         args, user_seq[: int(len(user_seq) * args.training_data_ratio)], data_type="train"
     )
@@ -172,24 +171,32 @@ def main():
     eval_dataset = RecWithContrastiveLearningDataset(args, user_seq, data_type="valid")
     eval_sampler = SequentialSampler(eval_dataset)
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.batch_size)
-
+    
     test_dataset = RecWithContrastiveLearningDataset(args, user_seq, data_type="test")
     test_sampler = SequentialSampler(test_dataset)
     test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.batch_size)
 
     model = SASRecModel(args=args)
 
-    trainer = ELCRecTrainer(model, test_dataloader, args)
+    trainer = ELCRecTrainer(model, train_dataloader, cluster_dataloader, eval_dataloader, test_dataloader, args)
 
     if args.wandb:
+        import wandb
         wandb.init(config=args,
                    project="rec",
                    dir="./wandb/",
-                   name="ELCRec_{}".format(args.data_name),
+                   name="best_cluster_cluster_{}-{}".format(args.num_intent_clusters, args.data_name),
                    job_type="training",
                    reinit=True)
+        
+    if args.do_eval:
+        trainer.args.train_matrix = test_rating_matrix
+        trainer.load(args.checkpoint_path)
+        print(f"Load model from {args.checkpoint_path} for test!")
+        scores, result_info = trainer.test(0, full_sort=True)
+
     else:
-        print(f"Train ELCRec")
+        print(f"Train ICLRec")
         early_stopping = EarlyStopping(args.checkpoint_path, patience=40, verbose=True)
         for epoch in tqdm(range(args.epochs)):
             rec_avg_loss, joint_avg_loss = trainer.train(epoch)
@@ -201,34 +208,20 @@ def main():
                            "hit@10": float(scores[2]), "ndgc@10": float(scores[3]),
                            "hit@20": float(scores[4]), "ndgc@20": float(scores[5])})
 
+
             early_stopping(np.array(scores[-1:]), trainer.model)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
         trainer.args.train_matrix = test_rating_matrix
         print("---------------Change to test_rating_matrix!-------------------")
-        # load the best model
         trainer.model.load_state_dict(torch.load(args.checkpoint_path))
         scores, result_info = trainer.test(0, full_sort=True)
-
-    
-
-    if args.do_eval:
-        trainer.args.train_matrix = test_rating_matrix
-        trainer.load(args.checkpoint_path)
-        print(f"Load model from {args.checkpoint_path} for test!")
-        scores, result_info = trainer.test(0)
-
+        
     print(args_str)
     print(result_info)
     with open(args.log_file, "a") as f:
         f.write(args_str + "\n")
         f.write(result_info + "\n")
-    
-    if args.wandb:
-        wandb.log({"test_hit@5": scores[0], "test_ndgc@5": scores[1],
-                   "test_hit@10": float(scores[2]), "test_ndgc@10": float(scores[3]),
-                   "test_hit@20": float(scores[4]), "test_ndgc@20": float(scores[5])})
-
 
 main()

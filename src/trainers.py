@@ -2,22 +2,42 @@ import torch
 import numpy as np
 import torch.nn as nn
 from tqdm import tqdm
+from models import KMeans
 from torch.optim import Adam
 import torch.nn.functional as F
 from modules import NCELoss, PCLoss
 from utils import recall_at_k, ndcg_k, nCr
-from datasets import RecWithContrastiveLearningDataset
-from utils import recall_at_k, ndcg_k, get_metric, get_user_seqs, nCr
-
 
 class Trainer:
-    def __init__(self, model, test_dataloader, args):
+    def __init__(self, model, train_dataloader, cluster_dataloader, eval_dataloader, test_dataloader, args):
 
         self.args = args
         self.cuda_condition = torch.cuda.is_available() and not self.args.no_cuda
         self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         self.model = model
         self.num_intent_clusters = [int(i) for i in self.args.num_intent_clusters.split(",")]
+        
+        self.clusters = []
+        for num_intent_cluster in self.num_intent_clusters:
+            if self.args.seq_representation_type == "mean":
+                cluster = KMeans(
+                    num_cluster=num_intent_cluster,
+                    seed=self.args.seed,
+                    hidden_size=self.args.hidden_size,
+                    gpu_id=self.args.gpu_id,
+                    device=self.device,
+                )
+                self.clusters.append(cluster)
+            else:
+                cluster = KMeans(
+                    num_cluster=num_intent_cluster,
+                    seed=self.args.seed,
+                    hidden_size=self.args.hidden_size * self.args.max_seq_length,
+                    gpu_id=self.args.gpu_id,
+                    device=self.device,
+                )
+                self.clusters.append(cluster)
+
         self.total_augmentaion_pairs = nCr(self.args.n_views, 2)
         self.projection = nn.Sequential(
             nn.Linear(self.args.max_seq_length * self.args.hidden_size, 512, bias=False),
@@ -28,19 +48,19 @@ class Trainer:
         if self.cuda_condition:
             self.model.cuda()
             self.projection.cuda()
+            
         
         self.train_dataloader = train_dataloader
         self.cluster_dataloader = cluster_dataloader
         self.eval_dataloader = eval_dataloader
         self.test_dataloader = test_dataloader
-
+        
         betas = (self.args.adam_beta1, self.args.adam_beta2)
         self.optim = Adam(self.model.parameters(), lr=self.args.lr, betas=betas, weight_decay=self.args.weight_decay)
-
-        print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
-
+        
         self.cf_criterion = NCELoss(self.args.temperature, self.device)
         self.pcl_criterion = PCLoss(self.args.temperature, self.device)
+
 
     def train(self, epoch):
         return self.iteration(epoch, self.train_dataloader, self.cluster_dataloader)
@@ -48,12 +68,12 @@ class Trainer:
     def valid(self, epoch, full_sort=False):
         return self.iteration(epoch, self.eval_dataloader, full_sort=full_sort, train=False)
 
-    def test(self, epoch):
-        return self.iteration(epoch, self.test_dataloader)
+    def test(self, epoch, full_sort=False):
+        return self.iteration(epoch, self.test_dataloader, full_sort=full_sort, train=False)
 
     def iteration(self, epoch, dataloader, full_sort=False, train=True):
         raise NotImplementedError
-
+    
     def get_full_sort_score(self, epoch, answers, pred_list):
         recall, ndcg = [], []
         for k in [5, 20]:
@@ -77,25 +97,17 @@ class Trainer:
     def load(self, file_name):
         self.model.load_state_dict(torch.load(file_name))
 
-    def predict_sample(self, seq_out, test_neg_sample):
-        test_item_emb = self.model.item_embeddings(test_neg_sample)
-        test_logits = torch.bmm(test_item_emb, seq_out.unsqueeze(-1)).squeeze(-1)
-        return test_logits
-
-    def predict_full(self, seq_out):
-        test_item_emb = self.model.item_embeddings.weight
-        rating_pred = torch.matmul(seq_out, test_item_emb.transpose(0, 1))
-        return rating_pred
-
     def cross_entropy(self, seq_out, pos_ids, neg_ids):
+
         pos_emb = self.model.item_embeddings(pos_ids)
         neg_emb = self.model.item_embeddings(neg_ids)
+
         pos = pos_emb.view(-1, pos_emb.size(2))
         neg = neg_emb.view(-1, neg_emb.size(2))
-        seq_emb = seq_out.view(-1, self.args.hidden_size)  
-        pos_logits = torch.sum(pos * seq_emb, -1)  
+        seq_emb = seq_out.view(-1, self.args.hidden_size) 
+        pos_logits = torch.sum(pos * seq_emb, -1) 
         neg_logits = torch.sum(neg * seq_emb, -1)
-        istarget = (pos_ids > 0).view(pos_ids.size(0) * self.model.args.max_seq_length).float()  
+        istarget = (pos_ids > 0).view(pos_ids.size(0) * self.model.args.max_seq_length).float() 
         loss = torch.sum(
             -torch.log(torch.sigmoid(pos_logits) + 1e-24) * istarget
             - torch.log(1 - torch.sigmoid(neg_logits) + 1e-24) * istarget
@@ -103,46 +115,58 @@ class Trainer:
 
         return loss
     
+    def predict_sample(self, seq_out, test_neg_sample):
+        test_item_emb = self.model.item_embeddings(test_neg_sample)
+        test_logits = torch.bmm(test_item_emb, seq_out.unsqueeze(-1)).squeeze(-1)  # [B 100]
+        return test_logits
+
+    def predict_full(self, seq_out):
+        test_item_emb = self.model.item_embeddings.weight
+        rating_pred = torch.matmul(seq_out, test_item_emb.transpose(0, 1))
+        return rating_pred
 
 
 class ELCRecTrainer(Trainer):
-    def __init__(self, model, train_dataloader, args):
+    def __init__(self, model, train_dataloader, cluster_dataloader, eval_dataloader, test_dataloader, args):
         super(ELCRecTrainer, self).__init__(
-            model, train_dataloader, args
+            model, train_dataloader, cluster_dataloader, eval_dataloader, test_dataloader, args
         )
-
-    def _instance_cl_one_pair_contrastive_learning(self, inputs, intent_ids=None):
-            cl_batch = torch.cat(inputs, dim=0)
-            cl_batch = cl_batch.to(self.device)
-            cl_sequence_output = self.model(cl_batch)
-            bz = cl_sequence_output.shape[0]
-            seq = cl_sequence_output.shape[1]
-            clu_num = self.model.cluster_centers.shape[0]
-            xx = (cl_sequence_output * cl_sequence_output).sum(-1).reshape(bz, seq, 1).repeat(1, 1, clu_num)
-            cc = (self.model.cluster_centers * self.model.cluster_centers).sum(-1).reshape(1, 1, clu_num).repeat(bz, seq, 1)
-            xc = torch.matmul(cl_sequence_output, self.model.cluster_centers.T)
-            dis = xx + cc - 2 * xc
-            index = torch.argmin(dis, dim=-1)
-            shift = self.model.cluster_centers[index]
-
-            if self.args.prototype == "shift":
-                cl_sequence_output += shift
-
-            elif self.args.prototype == "concat":
-                cl_sequence_output = torch.concat([cl_sequence_output, shift], dim=-1)
-
-            if self.args.seq_representation_instancecl_type == "mean":
-                cl_sequence_output = torch.mean(cl_sequence_output, dim=1, keepdim=False)
-            cl_sequence_flatten = cl_sequence_output.view(cl_batch.shape[0], -1)
-            batch_size = cl_batch.shape[0] // 2
-            cl_output_slice = torch.split(cl_sequence_flatten, batch_size)
-
-            if self.args.de_noise:
-                cl_loss = self.cf_criterion(cl_output_slice[0], cl_output_slice[1], intent_ids=intent_ids)
-            else:
-                cl_loss = self.cf_criterion(cl_output_slice[0], cl_output_slice[1], intent_ids=None)
-            return cl_loss
     
+    def _instance_cl_one_pair_contrastive_learning(self, inputs, intent_ids=None):
+        cl_batch = torch.cat(inputs, dim=0)
+        cl_batch = cl_batch.to(self.device)
+        cl_sequence_output = self.model(cl_batch)
+
+        bz = cl_sequence_output.shape[0]
+        seq = cl_sequence_output.shape[1]
+        clu_num = self.model.cluster_centers.shape[0]
+        xx = (cl_sequence_output * cl_sequence_output).sum(-1).reshape(bz, seq, 1).repeat(1, 1, clu_num)
+        cc = (self.model.cluster_centers * self.model.cluster_centers).sum(-1).reshape(1, 1, clu_num).repeat(bz, seq, 1)
+        xc = torch.matmul(cl_sequence_output, self.model.cluster_centers.T)
+        dis = xx + cc - 2 * xc
+        index = torch.argmin(dis, dim=-1)
+        shift = self.model.cluster_centers[index]
+
+        # 1. shift
+        if self.args.prototype == "shift":
+            cl_sequence_output += shift
+
+        # 2. concat
+        elif self.args.prototype == "concat":
+            cl_sequence_output = torch.concat([cl_sequence_output, shift], dim=-1)
+
+        if self.args.seq_representation_instancecl_type == "mean":
+            cl_sequence_output = torch.mean(cl_sequence_output, dim=1, keepdim=False)
+        cl_sequence_flatten = cl_sequence_output.view(cl_batch.shape[0], -1)
+        batch_size = cl_batch.shape[0] // 2
+        cl_output_slice = torch.split(cl_sequence_flatten, batch_size)
+
+        if self.args.de_noise:
+            cl_loss = self.cf_criterion(cl_output_slice[0], cl_output_slice[1], intent_ids=intent_ids)
+        else:
+            cl_loss = self.cf_criterion(cl_output_slice[0], cl_output_slice[1], intent_ids=None)
+        return cl_loss
+
     @ staticmethod
     def distance(x, c):
         xx = (x * x).sum(-1).reshape(-1, 1).repeat(1, c.shape[0])
@@ -151,7 +175,7 @@ class ELCRecTrainer(Trainer):
         xc = x @ c.T
         dis = xx_cc - 2 * xc
         return dis
-    
+
     def _pcl_one_pair_contrastive_learning(self, inputs, intents, intent_ids):
         n_views, (bsz, seq_len) = len(inputs), inputs[0].shape
         cl_batch = torch.cat(inputs, dim=0)
@@ -168,15 +192,42 @@ class ELCRecTrainer(Trainer):
         else:
             cl_loss = self.pcl_criterion(cl_output_slice[0], cl_output_slice[1], intents=intents, intent_ids=None)
         return cl_loss
-
+    
 
     def iteration(self, epoch, dataloader, cluster_dataloader=None, full_sort=True, train=True):
 
         if train:
+            # ------ intentions clustering ----- #
+            if self.args.contrast_type in ["IntentCL", "Hybrid"] and epoch >= self.args.warm_up_epoches:
+                if epoch==0:
+                    print("Preparing Clustering:")
+                    self.model.eval()
+                    kmeans_training_data = []
+                    rec_cf_data_iter = enumerate(cluster_dataloader)
+                    for i, (rec_batch, _, _) in rec_cf_data_iter:
+                        rec_batch = tuple(t.to(self.device) for t in rec_batch)
+                        _, input_ids, target_pos, target_neg, _ = rec_batch
+                        sequence_output = self.model(input_ids)
+                        if self.args.seq_representation_type == "mean":
+                            sequence_output = torch.mean(sequence_output, dim=1, keepdim=False)
+                        sequence_output = sequence_output.view(sequence_output.shape[0], -1)
+                        sequence_output = sequence_output.detach().cpu().numpy()
+                        kmeans_training_data.append(sequence_output)
+                    kmeans_training_data = np.concatenate(kmeans_training_data, axis=0)
 
+                    print("Training Clusters:")
+                    for i, cluster in enumerate(self.clusters):
+
+                        cluster.train(kmeans_training_data)
+                        self.model.cluster_centers.data = cluster.centroids
+
+                    import gc
+
+                    gc.collect()
+
+            # ------ model training -----#
             self.model.train()
             rec_avg_loss = 0.0
-            cl_individual_avg_losses = [0.0 for i in range(self.total_augmentaion_pairs)]
             cl_sum_avg_loss = 0.0
             joint_avg_loss = 0.0
 
@@ -186,10 +237,13 @@ class ELCRecTrainer(Trainer):
                 rec_batch = tuple(t.to(self.device) for t in rec_batch)
                 _, input_ids, target_pos, target_neg, _ = rec_batch
 
+                # ---------- recommendation task ---------------#
                 sequence_output = self.model(input_ids)
+
 
                 rec_loss = self.cross_entropy(sequence_output, target_pos, target_neg)
 
+                # ---------- contrastive learning task -------------#
                 cl_losses = []
                 sample_distance_losses = []
                 for cl_batch in cl_batches:
@@ -200,12 +254,12 @@ class ELCRecTrainer(Trainer):
                         cl_losses.append(self.args.cf_weight * cl_loss)
                     elif self.args.contrast_type == "IntentCL":
 
+                        # ------ performing clustering for getting users' intentions ----#
                         if epoch >= self.args.warm_up_epoches:
                             if self.args.seq_representation_type == "mean":
                                 sequence_output = torch.mean(sequence_output, dim=1, keepdim=False)
                             sequence_output = sequence_output.view(sequence_output.shape[0], -1)
                             sequence_output = sequence_output.detach().cpu().numpy()
-
 
                             for cluster in self.model.cluster_centers:
                                 seq2intents = []
@@ -298,7 +352,6 @@ class ELCRecTrainer(Trainer):
             return rec_avg_loss / len(dataloader), joint_avg_loss / len(dataloader)
 
         else:
-
             rec_data_iter = enumerate(dataloader)
             self.model.eval()
 
@@ -307,6 +360,7 @@ class ELCRecTrainer(Trainer):
             if full_sort:
                 answer_list = None
                 for i, batch in rec_data_iter:
+
                     batch = tuple(t.to(self.device) for t in batch)
                     user_ids, input_ids, target_pos, target_neg, answers = batch
                     recommend_output = self.model(input_ids)
@@ -318,6 +372,7 @@ class ELCRecTrainer(Trainer):
                     rating_pred = rating_pred.cpu().data.numpy().copy()
                     batch_user_index = user_ids.cpu().numpy()
                     rating_pred[self.args.train_matrix[batch_user_index].toarray() > 0] = 0
+
                     ind = np.argpartition(rating_pred, -20)[:, -20:]
                     arr_ind = rating_pred[np.arange(len(rating_pred))[:, None], ind]
                     arr_ind_argsort = np.argsort(arr_ind)[np.arange(len(rating_pred)), ::-1]
