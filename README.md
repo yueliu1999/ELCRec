@@ -51,12 +51,15 @@ Figure 2. ELCRec framework.
 ### Quick Start
 
 For evaluation:
-```
-cd ./src
-bash ./scripts/run_sports.sh
-```
 
 ```
+cd ./src
+```
+
+
+```
+bash ./scripts/run_sports.sh
+
 ELCRec-Sports_and_Outdoors-1
 {'Epoch': 0, 'HIT@5': '0.0286', 'NDCG@5': '0.0185', 'HIT@20': '0.0648', 'NDCG@20': '0.0286'}
 ```
@@ -65,9 +68,7 @@ ELCRec-Sports_and_Outdoors-1
 
 ```
 bash ./scripts/run_beauty.sh
-```
 
-```
 ELCRec-Beauty-1
 {'Epoch': 0, 'HIT@5': '0.0529', 'NDCG@5': '0.0355', 'HIT@20': '0.1079', 'NDCG@20': '0.0509'}
 ```
@@ -76,9 +77,7 @@ ELCRec-Beauty-1
 
 ```
 bash ./scripts/run_toys.sh
-```
 
-```
 ELCRec-Toys_and_Games-1
 {'Epoch': 0, 'HIT@5': '0.0585', 'NDCG@5': '0.0403', 'HIT@20': '0.1138', 'NDCG@20': '0.0560'}
 ```
@@ -87,16 +86,16 @@ ELCRec-Toys_and_Games-1
 
 ```
 bash ./scripts/run_yelp.sh
-```
 
-```
 ELCRec-Yelp-1
 {'Epoch': 0, 'HIT@5': '0.0236', 'NDCG@5': '0.0150', 'HIT@20': '0.0653', 'NDCG@20': '0.0266'}
 ```
 
 
+## Acknowledgements
 
-# Acknowledgement
+- [SASRec](https://github.com/kang205/SASRec): the official implement of SASRec model.
+- [ICLRec](https://github.com/salesforce/ICLRec): the official implement of ICLRec model.
 
 # Citation
 
