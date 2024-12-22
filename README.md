@@ -47,12 +47,14 @@ Figure 1. Intent learning in recommendation & ELCRec framework.
 
 ### Quick Start
 
-For evaluation:
+clone this repository and change directory to ./src
 
 ```
+git clone https://github.com/yueliu1999/ELCRec.git
 cd ./src
 ```
 
+evaluation on trained model:
 
 ```
 bash ./scripts/run_sports.sh
@@ -88,13 +90,47 @@ ELCRec-Yelp-1
 {'Epoch': 0, 'HIT@5': '0.0236', 'NDCG@5': '0.0150', 'HIT@20': '0.0653', 'NDCG@20': '0.0266'}
 ```
 
+re-train the model and evaluate:
+
+```
+python3 main.py --data_name Beauty --cf_weight 0.1 \
+--model_idx 1 --gpu_id 0 \
+--batch_size 256 --contrast_type Hybrid \
+--num_intent_cluster 256 --seq_representation_type mean \
+--intent_cf_weight 0.1 --num_hidden_layers 1
+```
+
+```
+python3 main.py --data_name Sports_and_Outdoors --cf_weight 0.1 \
+--model_idx 1 --gpu_id 0 \
+--batch_size 256 --contrast_type Hybrid \
+--num_intent_cluster 256 --seq_representation_type mean \
+--intent_cf_weight 0.1 --num_hidden_layers 2
+```
+
+```
+python3 main.py --data_name Toys_and_Games --cf_weight 0.1 \
+--model_idx 1 --gpu_id 0 \
+--batch_size 256 --contrast_type Hybrid \
+--num_intent_cluster 256 --seq_representation_type mean \
+--intent_cf_weight 0.1 --num_hidden_layers 3
+```
+
+```
+python3 main.py --data_name Yelp --cf_weight 0.1 \
+--model_idx 1 --gpu_id 0 \
+--batch_size 256 --contrast_type Hybrid \
+--num_intent_cluster 256 --seq_representation_type mean \
+--intent_cf_weight 0.1 --num_hidden_layers 2
+```
 
 ## Acknowledgements
-
+Our code are partly based on the following GitHub repository. Thanks for their awesome works.
 - [SASRec](https://github.com/kang205/SASRec): the official implement of SASRec model.
 - [ICLRec](https://github.com/salesforce/ICLRec): the official implement of ICLRec model.
 
 # Citation
+If you find this repository helpful, please cite our paper.
 
 ```
 @inproceedings{liuyue_ELCRec,
