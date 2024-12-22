@@ -26,13 +26,14 @@ Figure 1. Intent learning in recommendation & ELCRec framework.
   <summary>Table of Contents</summary>
   <ol>
     <li><a href="#Usage">Usage</a></li>
-    <li><a href="#acknowledgement">Acknowledgement</a></li>
-    <li><a href="#citation">Citation</a></li>
+    <li><a href="#Results">Results</a></li>
+    <li><a href="#Acknowledgement">Acknowledgement</a></li>
+    <li><a href="#Citation">Citation</a></li>
   </ol>
 </details>
 
 
-# Usage
+## Usage
 
 
 
@@ -124,6 +125,7 @@ python3 main.py --data_name Yelp --cf_weight 0.1 \
 --intent_cf_weight 0.1 --num_hidden_layers 2
 ```
 
+## Results
 <img src="./assets/tsne.png" alt="radar_plot" style="zoom:60%;" />
 
 
@@ -132,7 +134,7 @@ Our code are partly based on the following GitHub repository. Thanks for their a
 - [SASRec](https://github.com/kang205/SASRec): the official implement of SASRec model.
 - [ICLRec](https://github.com/salesforce/ICLRec): the official implement of ICLRec model.
 
-# Citation
+## Citation
 If you find this repository helpful, please cite our paper.
 
 ```
