@@ -133,16 +133,25 @@ python3 main.py --data_name Yelp --cf_weight 0.1 \
 Our code are partly based on the following GitHub repository. Thanks for their awesome works.
 - [SASRec](https://github.com/kang205/SASRec): the official implement of SASRec model.
 - [ICLRec](https://github.com/salesforce/ICLRec): the official implement of ICLRec model.
+- [Dink-Net](https://github.com/yueliu1999/Dink-Net): the official implement of Dink-Net model.
 
 ## Citation
-If you find this repository helpful, please cite our paper.
+If you find this repository helpful, please cite our papers.
 
 ```
-@inproceedings{liuyue_ELCRec,
+@inproceedings{ELCRec,
   title={End-to-end Learnable Clustering for Intent Learning in Recommendation},
   author={Liu, Yue and Zhu, Shihao and Xia, Jun and Ma, Yingwei and Ma, Jian and Zhong, Wenliang and Liu, Xinwang and Yu, Shengju and Zhang, Kejun},
   booktitle={Proc. of NeurIPS},
   year={2024}
+}
+
+@inproceedings{Dink-Net,
+  title={Dink-Net: Neural Clustering on Large Graphs},
+  author={Liu, Yue and Liang, Ke and Xia, Jun and Zhou, Sihang and Yang, Xihong and Liu, Xinwang and Li, Stan Z.},
+  booktitle={International Conference on Machine Learning},
+  year={2023},
+  organization={PMLR}
 }
 ```
 
