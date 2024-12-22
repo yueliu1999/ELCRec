@@ -37,13 +37,13 @@ Figure 1. Intent learning in recommendation & ELCRec framework.
 
 
 ### Requirements
-
-- Python >= 3.7
-- Pytorch >= 1.2.0
-- tqdm == 4.26.0
-- faiss-gpu==1.7.1
-
-
+- python == 3.12.2
+- faiss==1.8.0
+- numpy==2.2.1
+- scipy==1.14.1
+- torch==2.4.1
+- tqdm==4.66.4
+- wandb==0.19.1
 
 ### Quick Start
 
