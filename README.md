@@ -124,7 +124,7 @@ python3 main.py --data_name Yelp --cf_weight 0.1 \
 --intent_cf_weight 0.1 --num_hidden_layers 2
 ```
 
-<img src="./assets/elcrec.png" alt="radar_plot" style="zoom:60%;" />
+<img src="./assets/tsne.png" alt="radar_plot" style="zoom:60%;" />
 
 
 ## Acknowledgements
