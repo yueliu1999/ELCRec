@@ -1,5 +1,5 @@
 <div align="center">
-<h2><a href="https://arxiv.org/pdf/2410.02832">End-to-end Learnable Clustering for Intent Learning in Recommendation</a></h2>
+<h2><a href="https://arxiv.org/pdf/2401.05975">End-to-end Learnable Clustering for Intent Learning in Recommendation</a></h2>
 
 [Yue Liu](https://yueliu1999.github.io/), Shihao Zhu, [Jun Xia](https://junxia97.github.io/), [Yingwei Ma](https://yingweima2022.github.io/), Jian Ma, [Xinwang Liu](https://xinwangliu.github.io/), Shengju Yu, Kejun Zhang, Wenliang Zhong
 
@@ -123,6 +123,9 @@ python3 main.py --data_name Yelp --cf_weight 0.1 \
 --num_intent_cluster 256 --seq_representation_type mean \
 --intent_cf_weight 0.1 --num_hidden_layers 2
 ```
+
+<img src="./assets/elcrec.png" alt="radar_plot" style="zoom:60%;" />
+
 
 ## Acknowledgements
 Our code are partly based on the following GitHub repository. Thanks for their awesome works.
