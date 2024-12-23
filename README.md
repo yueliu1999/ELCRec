@@ -126,7 +126,21 @@ python3 main.py --data_name Yelp --cf_weight 0.1 \
 ```
 
 ## Result
+<img src="./assets/compare_result.png" alt="radar_plot" style="zoom:60%;" />
+<p align="center">
+Table 1. Comparision Experiment.
+</p>
+
+<img src="./assets/ablation_study.png" alt="radar_plot" style="zoom:60%;" />
+<p align="center">
+Figure 2. Ablation Study.
+</p>
+
+
 <img src="./assets/tsne.png" alt="radar_plot" style="zoom:60%;" />
+<p align="center">
+Figure 3. t-SNE Visualization.
+</p>
 
 
 ## Acknowledgement
